@@ -114,32 +114,216 @@ AgriSmart AI is divided into **7 simple tools**. Here is what each one does:
 
 ---
 
-## 📱 How to Open & Try It (Simple 3 Steps)
+---
 
-You only need Python installed on your computer to run it:
+## 💻 Complete Local Setup Guide (Connect Backend, Frontend & ML Model)
 
-### Step 1: Open Terminal (or Command Prompt) and download the folder
+Anyone can run **AgriSmart AI** locally on their laptop (macOS, Windows, or Linux) in under 5 minutes.
+
+### 🏗️ How Backend, Frontend & ML Model Connect
+
+```
+┌────────────────────────────────────────────────────────┐
+│                   Web Browser UI                       │
+│        (frontend/index.html & frontend/js/api.js)      │
+└───────────────────────────┬────────────────────────────┘
+                            │ REST API Requests (/api/*)
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│               FastAPI Backend Server                   │
+│                (backend/main.py :8000)                 │
+│  - Serves REST API endpoints (/api/*, /predict, etc.)  │
+│  - Hosts Frontend Web UI statically at /frontend       │
+│  - Handles CORS for cross-origin local testing         │
+└─────────────┬───────────────────────────┬──────────────┘
+              │ Loads on boot             │ Queries for live data
+              ▼                           ▼
+┌───────────────────────────┐  ┌─────────────────────────┐
+│  PyTorch Deep Learning    │  │ External Integrations   │
+│  EfficientNet-B0 Model    │  │ - Open-Meteo (Weather)  │
+│ (model/best_agri_model.pth│  │ - Google Gemini (GenAI) │
+│   38 Pathology Classes)   │  └─────────────────────────┘
+└───────────────────────────┘
+```
+
+1. **Frontend**: Pure HTML5, CSS3, and JavaScript located in `frontend/`. It communicates with the backend via `frontend/js/api.js` pointing to `/api`.
+2. **Backend**: A high-performance Python FastAPI server in `backend/` that handles leaf validation guardrails, crop recommendations, irrigation calculations, and agentic workflows. It also mounts and serves the frontend directly.
+3. **ML Model**: A trained PyTorch EfficientNet-B0 weights file located at `model/best_agri_model.pth` (16.5 MB, trained on 38 PlantVillage pathology classes). On startup, `backend/services/disease_service.py` automatically detects and loads these weights on CPU (or CUDA GPU if available).
+
+---
+
+### 📋 Prerequisites
+
+Before starting, ensure your laptop has:
+* **Python 3.10, 3.11, or 3.12** installed ([Download Python](https://www.python.org/downloads/))
+* **Git** installed ([Download Git](https://git-scm.com/downloads))
+* Any modern web browser (Google Chrome, Microsoft Edge, Mozilla Firefox, Safari)
+
+Verify your Python version in terminal/command prompt:
 ```bash
-git clone https://github.com/hetjiyani/SIH_project.git
+python3 --version   # or: python --version
+```
+
+---
+
+### 🚀 Step-by-Step Installation
+
+#### Step 1: Clone the Repository
+Open your Terminal (macOS/Linux) or Command Prompt / PowerShell (Windows) and clone the repository:
+```bash
+git clone https://github.com/ManavVora26/AgriSmart-AI.git
 cd AgriSmart-AI
 ```
 
-### Step 2: Install dependencies
+#### Step 2: Create and Activate a Virtual Environment
+
+* **On macOS / Linux:**
+  ```bash
+  python3 -m venv venv
+  source venv/bin/activate
+  ```
+
+* **On Windows (Command Prompt):**
+  ```cmd
+  python -m venv venv
+  venv\Scripts\activate.bat
+  ```
+
+* **On Windows (PowerShell):**
+  ```powershell
+  python -m venv venv
+  venv\Scripts\Activate.ps1
+  ```
+  *(Note: If PowerShell shows an execution policy error, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first).*
+
+#### Step 3: Install Required Dependencies
+Install the necessary Python packages (FastAPI, PyTorch, Torchvision, Scikit-learn, etc.):
 ```bash
-python3 -m venv venv
-source venv/bin/activate    # On Windows: venv\Scripts\activate
+pip install --upgrade pip
 pip install -r backend/requirements.txt
 ```
 
-### Step 3: Start the app
+#### Step 4: Configure Environment & Verify the Model Weights
+
+The pre-trained model weights are **already included** in this repository under `model/best_agri_model.pth`.
+
+Create your local `.env` configuration file from the template:
+
+* **On macOS / Linux:**
+  ```bash
+  cp backend/.env.example backend/.env
+  ```
+* **On Windows:**
+  ```cmd
+  copy backend\.env.example backend\.env
+  ```
+
+Open `backend/.env` in any text editor and review the settings:
+```ini
+# Google Gemini API Key (Optional: for AI Chat Assistant & Vision Guardrail)
+# Get a free key at https://aistudio.google.com
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Weather API (Open-Meteo — free, no key needed)
+WEATHER_API_BASE=https://api.open-meteo.com/v1
+
+# Path to the trained ML model weights (relative to backend/)
+MODEL_WEIGHTS_PATH=../model/best_agri_model.pth
+
+# Model mode: "real" to run PyTorch inference, or "mock" for lightweight testing
+MODEL_MODE=real
+
+# Server port and host
+HOST=0.0.0.0
+PORT=8000
+```
+> [!TIP]
+> `MODEL_MODE=real` works out of the box on laptops with CPU or GPU. If you don't have an internet connection or want instant stub testing without loading the weights, you can set `MODEL_MODE=mock`.
+
+#### Step 5: Start the AgriSmart AI Server
+
+Navigate to the `backend` folder and start the server:
 ```bash
-uvicorn backend.main:app --reload
+cd backend
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+*(Alternatively, you can run directly from the repository root: `uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000`).*
+
+When started, your terminal will display:
+```
+INFO:     Mounted static frontend from .../frontend at /frontend
+INFO:     Real model successfully loaded from .../model/best_agri_model.pth (38 classes).
+INFO:     Agentic advisor scheduler started (every 30 minutes).
+INFO:     Uvicorn running on http://0.0.0.0:8000
 ```
 
-Now open your web browser and go to:
+#### Step 6: Open the Application
+
+Open your browser and visit:
 👉 **[http://localhost:8000](http://localhost:8000)**
 
-You can now click through all 7 pages, try the sliders, upload leaf photos, and test the farm autopilot!
+* The server automatically redirects you to the interactive frontend dashboard (`http://localhost:8000/frontend/index.html`).
+* The frontend is already pre-configured to communicate with the backend API at `http://localhost:8000/api`.
+
+---
+
+### 🧪 How to Test Everything is Connected
+
+1. **Test Leaf Disease Detection (Backend + ML Model)**:
+   * Go to **Page 1 (Crop Disease Doctor)**.
+   * Click one of the quick test sample chips (e.g. 🍅 **Tomato Specimen**, 🥔 **Potato Late Blight**, or 🍏 **Apple Scab**).
+   * Or drag & drop a real leaf image from the provided `Test Images/` folder (e.g., `Test Images/Test.jpeg`).
+   * Click **Run Pathology Diagnosis**.
+   * The PyTorch EfficientNet-B0 model will analyze the leaf, identify the disease class, compute confidence, and display tailored organic and chemical treatment plans.
+2. **Test Non-Plant Guardrail**:
+   * Upload an arbitrary non-plant photo (e.g., a photo of a car, pet, or document).
+   * Notice how the validation guardrail triggers, rejects the non-leaf image, and displays the **Detected Foliage Index** warning.
+3. **Test Interactive Swagger API Docs**:
+   * Visit **[http://localhost:8000/docs](http://localhost:8000/docs)** to inspect and execute every REST endpoint directly from the browser.
+4. **Test Backend Health Endpoint**:
+   * Visit **[http://localhost:8000/health](http://localhost:8000/health)** to verify server status, loaded model mode, and connected modules in JSON.
+5. **Run Automated Test Suite**:
+   ```bash
+   python backend/test_api_adapter.py
+   ```
+   All 8 automated integration tests will verify the health check, disease prediction, crop recommendation, irrigation logic, weather service, sustainability scoring, assistant, and agentic feed.
+
+---
+
+### 🛠️ Optional: Running Frontend on a Separate Dev Server
+
+If you are developing frontend features and prefer using a separate static server (such as VS Code *Live Server* or Python's HTTP server):
+1. Keep the backend running on `http://localhost:8000`.
+2. In a second terminal, start a frontend server:
+   ```bash
+   python3 -m http.server 3000 --directory frontend
+   ```
+3. Open `http://localhost:3000/index.html` in your browser.
+4. Because CORS is enabled on the backend (`allow_origins=["*"]`), the frontend will communicate with the backend API at `http://localhost:8000/api` without any cross-origin errors.
+
+---
+
+### ❓ Troubleshooting & FAQs
+
+* **Issue: `Address already in use` or Port 8000 is occupied**
+  * Run the server on a different port:
+    ```bash
+    uvicorn backend.main:app --reload --port 8001
+    ```
+    Then access `http://localhost:8001`.
+* **Issue: `ModuleNotFoundError: No module named 'routers'`**
+  * When running from the repository root, ensure your branch contains the latest `backend/main.py` which automatically sets `sys.path`.
+  * Alternatively, navigate into `backend/` and run directly:
+    ```bash
+    cd backend
+    uvicorn main:app --reload --port 8000
+    ```
+* **Issue: `ModuleNotFoundError: No module named 'torch'` (or similar)**
+  * Ensure your virtual environment is activated (`source venv/bin/activate` or `venv\Scripts\activate`) before running `pip install -r backend/requirements.txt` and `uvicorn`.
+* **Issue: Leaf model running slowly on older laptops**
+  * The PyTorch model runs on CPU with lightweight tensor operations. For instant response times on resource-constrained devices, you can switch `.env` to `MODEL_MODE=mock`.
+* **Issue: Gemini AI Chat Assistant shows "service unavailable"**
+  * Check that you added your free `GEMINI_API_KEY` into `backend/.env`. All other modules (disease detection, irrigation, crop picker, sustainability, weather) function 100% offline without any API keys.
 
 ---
 
@@ -155,7 +339,11 @@ You can now click through all 7 pages, try the sliders, upload leaf photos, and 
 
 ---
 
-## 🤝 Project Credits
+## 🤝 Project Credits & Copyright
 * **Built for:** Smart India Hackathon (SIH) 2026
+* **Problem Statement:** C-433
 * **Team:** AgriSmart AI
 * **Dedicated to:** Hardworking farmers seeking simple, affordable, and sustainable technology.
+* **License:** Released under the [MIT License](https://opensource.org/licenses/MIT).
+* **Copyright:** &copy; 2026 AgriSmart AI. All rights reserved.
+
