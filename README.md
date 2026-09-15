@@ -120,7 +120,7 @@ You only need Python installed on your computer to run it:
 
 ### Step 1: Open Terminal (or Command Prompt) and download the folder
 ```bash
-git clone https://github.com/ManavVora26/AgriSmart-AI.git
+git clone https://github.com/hetjiyani/SIH_project.git
 cd AgriSmart-AI
 ```
 
