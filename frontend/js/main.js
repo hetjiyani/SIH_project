@@ -386,11 +386,6 @@ document.addEventListener('DOMContentLoaded', () => {
     state.selectedSamplePreset = null;
     clearActiveSampleChips();
 
-    // Hide any previous pre-scan warning banner
-    const previewLeafWarning = document.getElementById('previewLeafWarning');
-    const previewWarningMsg = document.getElementById('previewWarningMsg');
-    if (previewLeafWarning) previewLeafWarning.style.display = 'none';
-
     // Generate local preview
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -401,26 +396,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     reader.readAsDataURL(file);
     showToast(`Loaded ${file.name}`, 'info');
-
-    // Instant Client-Side Guardrail Pre-Check
-    if (window.AgriSmartMock?.validateClientLeafImage) {
-      window.AgriSmartMock.validateClientLeafImage(file).then(val => {
-        if (!val.isValid) {
-          if (previewLeafWarning) {
-            previewLeafWarning.style.display = 'flex';
-            if (previewWarningMsg) {
-              previewWarningMsg.textContent = val.message || 'This image does not appear to contain a crop leaf. Please retry with a plant leaf.';
-            }
-          }
-          if (previewMeta) {
-            previewMeta.innerHTML = `<span style="color: #D84315; font-weight: 700;">⚠️ Non-leaf image detected</span> • Retry recommended`;
-          }
-          showToast('Warning: Selected image does not appear to be a crop leaf', 'warning');
-        } else {
-          if (previewLeafWarning) previewLeafWarning.style.display = 'none';
-        }
-      }).catch(err => console.warn('Pre-scan leaf check:', err));
-    }
   }
 
   // Remove preview
@@ -430,19 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.selectedSamplePreset = null;
       leafFileInput.value = '';
       imagePreviewCard.classList.remove('visible');
-      const previewLeafWarning = document.getElementById('previewLeafWarning');
-      if (previewLeafWarning) previewLeafWarning.style.display = 'none';
       clearActiveSampleChips();
-    });
-  }
-
-  const previewInlineRetryBtn = document.getElementById('previewInlineRetryBtn');
-  if (previewInlineRetryBtn) {
-    previewInlineRetryBtn.addEventListener('click', () => {
-      if (leafFileInput) {
-        leafFileInput.value = '';
-        leafFileInput.click();
-      }
     });
   }
 
@@ -514,9 +477,6 @@ document.addEventListener('DOMContentLoaded', () => {
       previewFilename.textContent = `${preset.name} (Live Specimen)`;
       previewMeta.textContent = `${preset.crop} • Auto-calibrated test photo • Ready for ML scan`;
       imagePreviewCard.classList.add('visible');
-
-      const previewLeafWarning = document.getElementById('previewLeafWarning');
-      if (previewLeafWarning) previewLeafWarning.style.display = 'none';
 
       showToast(`Selected ${preset.name} test sample`, 'success');
     });
@@ -599,7 +559,10 @@ document.addEventListener('DOMContentLoaded', () => {
       );
       renderDiseaseResult(result);
       if (result.status === 'invalid_image') {
-        const toastMsg = result.retry_message || 'Image rejected: Please upload a crop leaf photo to retry';
+        const isImproper = (result.reason === 'improper_image' || result.reason === 'low_confidence');
+        const toastMsg = isImproper
+          ? 'The image is not proper (Confidence below 50%). Please upload a clear crop leaf photo.'
+          : (result.retry_message || 'Image rejected: Please upload a crop leaf photo to retry');
         showToast(toastMsg, 'warning');
       } else {
         showToast(`Analysis complete: ${result.disease}`, result.status === 'healthy' ? 'success' : 'warning');
@@ -617,12 +580,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const diseaseResultDetails = document.getElementById('diseaseResultDetails');
     const diseaseValidationCard = document.getElementById('diseaseValidationCard');
 
-    // 1. Guardrail Check: Rejected / Non-Plant Image
+    // 1. Guardrail Check: Rejected / Non-Plant / Improper Image (< 50% confidence)
     if (result.status === 'invalid_image') {
       if (diseaseResultDetails) diseaseResultDetails.style.display = 'none';
       if (diseaseValidationCard) {
         diseaseValidationCard.style.display = 'flex';
 
+        const valBadge = document.getElementById('validationBadge');
         const valTitle = document.getElementById('validationTitle');
         const valSubtitle = document.getElementById('validationSubtitle');
         const valFoliage = document.getElementById('validationFoliageRatio');
@@ -631,9 +595,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const valRetryMessage = document.getElementById('validationRetryMessage');
         const valTipsList = document.getElementById('validationTipsList');
 
-        if (valTitle) valTitle.textContent = result.title || 'No Crop Leaf Detected';
+        if (valBadge) {
+          if (result.reason === 'improper_image' || result.reason === 'low_confidence') {
+            valBadge.textContent = '⚠️ Image Not Proper • Confidence Below 50%';
+            valBadge.style.backgroundColor = '#FFEBEE';
+            valBadge.style.color = '#C62828';
+          } else if (result.reason === 'no_plant_detected') {
+            valBadge.textContent = '❌ Guardrail Alert • Non-Crop Image Detected';
+            valBadge.style.backgroundColor = '#FFCDD2';
+            valBadge.style.color = '#B71C1C';
+          } else if (result.reason === 'monotone_or_blank') {
+            valBadge.textContent = '⚠️ Quality Notice • Blank / Low Contrast Image';
+            valBadge.style.backgroundColor = '#FFE082';
+            valBadge.style.color = '#795548';
+          } else {
+            valBadge.textContent = '⚠️ Image Rejected • Not Proper for Diagnosis';
+            valBadge.style.backgroundColor = '#FFE082';
+            valBadge.style.color = '#795548';
+          }
+        }
+
+        if (valTitle) valTitle.textContent = result.title || 'Image is Not Proper';
         if (valSubtitle) {
-          valSubtitle.textContent = result.message || 'The uploaded image could not be verified as agricultural crop foliage.';
+          valSubtitle.textContent = result.message || 'The uploaded image is not proper or lacks recognizable crop foliage.';
         }
         if (valFoliage) {
           const ratio = (result.vegetation_ratio !== undefined)
@@ -643,10 +627,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (valReason) {
           const reasons = {
-            'no_plant_detected': 'Non-Plant / Out-of-Domain',
+            'improper_image': 'Image Not Proper (Confidence < 50%)',
+            'low_confidence': 'Image Not Proper (Confidence < 50%)',
+            'no_plant_detected': 'Non-Crop / Out-of-Domain Image',
             'monotone_or_blank': 'Monotone / Blank Frame',
-            'too_small': 'Resolution Too Low (< 80x80)',
-            'low_confidence': 'Ambiguous Subject (< 40% conf)',
+            'too_small': 'Resolution Too Low (< 40x40)',
             'empty_file': 'Corrupt / Empty Image',
           };
           valReason.textContent = reasons[result.reason] || 'Guardrail Triggered';

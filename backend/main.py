@@ -22,8 +22,13 @@ Docs: http://localhost:8000/docs
 
 import logging
 import os
+import sys
+from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+
+# Ensure backend directory is in sys.path so imports work regardless of working directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

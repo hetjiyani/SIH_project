@@ -71,9 +71,6 @@ const SAMPLE_LEAF_PRESETS = {
  * Client-Side Guardrail: Validates that an image contains agricultural foliage.
  */
 async function validateClientLeafImage(imageFile) {
-  if (imageFile?.isPreset || imageFile?.presetKey) {
-    return { isValid: true, vegetationRatio: 0.95, retry_message: '' };
-  }
   if (!imageFile) {
     return {
       isValid: false,
@@ -82,31 +79,6 @@ async function validateClientLeafImage(imageFile) {
       retry_message: 'Please retry by selecting a valid crop leaf photo.',
       suggestions: ['Please upload a valid JPEG, PNG, or WebP photo.']
     };
-  }
-
-  const fname = (imageFile.name || '').toLowerCase();
-  const nonPlantKeywords = [
-    'car', 'cat', 'dog', 'pet', 'animal', 'selfie', 'person', 'human', 'face',
-    'phone', 'laptop', 'computer', 'screen', 'screenshot', 'document', 'invoice',
-    'receipt', 'pdf', 'blue', 'white', 'black', 'monotone', 'blank', 'test_blue',
-    'test_white', 'furniture', 'room', 'building', 'shoe', 'food', 'snack', 'drink'
-  ];
-  for (const kw of nonPlantKeywords) {
-    if (fname.includes(kw) && !fname.includes('leaf') && !fname.includes('plant') && !fname.includes('blight') && !fname.includes('rust')) {
-      return {
-        isValid: false,
-        reason: 'no_plant_detected',
-        message: `No crop leaf detected in "${imageFile.name}". The subject appears to be a non-plant object, document, or vehicle.`,
-        retry_message: 'Please retry by capturing or selecting a close-up photo of a crop leaf.',
-        vegetationRatio: 0.0,
-        suggestions: [
-          'Take a close-up photo of a single crop leaf.',
-          'Ensure good natural daylight without flash glare.',
-          'Focus camera directly on the leaf surface or lesions.',
-          'Ensure the subject is a supported agricultural crop.'
-        ]
-      };
-    }
   }
 
   // If HTML Image/Blob, analyze pixel HSV spectrum and texture variation via canvas
@@ -122,6 +94,7 @@ async function validateClientLeafImage(imageFile) {
       const data = imgData.data;
 
       let plantPixels = 0;
+      let blueCyanPixels = 0;
       let totalPixels = 64 * 64;
       let totalR = 0, totalG = 0, totalB = 0;
 
@@ -140,14 +113,28 @@ async function validateClientLeafImage(imageFile) {
           else h = ((r - g) / d + 4) * 60;
         }
 
-        // Green foliage: 38° - 165°, s > 0.15, v > 0.15
-        const isGreen = (h >= 38 && h <= 165 && s >= 0.15 && v >= 0.15);
-        // Chlorotic yellow: 20° - 38°, s >= 0.2, v >= 0.2
-        const isYellow = (h >= 20 && h < 38 && s >= 0.2 && v >= 0.2);
-        // Necrotic foliar brown: 10° - 30°, s >= 0.25, 0.1 <= v <= 0.75
-        const isBrown = (h >= 10 && h < 30 && s >= 0.25 && v >= 0.1 && v <= 0.75);
+        // 1. Green / lime / yellow-green / olive foliage
+        const isGreen = (h >= 20 && h <= 175 && s >= 0.10 && v >= 0.10);
+        // 2. Chlorotic yellow / amber / golden foliage
+        const isYellow = (h >= 14 && h < 45 && s >= 0.12 && v >= 0.15);
+        // 3. Necrotic foliar brown / rust lesions
+        const isBrown = (h >= 4 && h < 30 && s >= 0.12 && v >= 0.08 && v <= 0.90);
+        // 4. Dark necrotic / black rot spots
+        const isDarkSpot = (h >= 3 && h <= 45 && s >= 0.06 && v >= 0.05 && v <= 0.40);
+        // 5. Reddish/purplish stress (anthocyanins / leaf curl)
+        const isRedPurple = ((h <= 12 || h >= 335) && s >= 0.15 && v >= 0.15);
+        // 6. Powdery mildew / silvery lesions
+        const isMildew = (h >= 18 && h <= 170 && s >= 0.05 && s <= 0.40 && v >= 0.45);
 
-        if (isGreen || isYellow || isBrown) plantPixels++;
+        // Blue / cyan non-plant check (sky, clothing, screen, vehicle)
+        const isBlueCyan = (h >= 180 && h <= 260 && s >= 0.20 && v >= 0.20);
+        if (isBlueCyan) {
+          blueCyanPixels++;
+        }
+
+        if (isGreen || isYellow || isBrown || isDarkSpot || isRedPurple || isMildew) {
+          plantPixels++;
+        }
       }
 
       // Check standard deviation / blank frame
@@ -157,7 +144,7 @@ async function validateClientLeafImage(imageFile) {
         varianceSum += Math.pow(data[i] - avgR, 2);
       }
       const stdDev = Math.sqrt(varianceSum / totalPixels);
-      if (stdDev < 10) {
+      if (stdDev < 7) {
         return {
           isValid: false,
           reason: 'monotone_or_blank',
@@ -169,7 +156,25 @@ async function validateClientLeafImage(imageFile) {
       }
 
       const ratio = plantPixels / totalPixels;
-      if (ratio < 0.15) {
+      const blueRatio = blueCyanPixels / totalPixels;
+
+      if (blueRatio > 0.35 && ratio < 0.15) {
+        return {
+          isValid: false,
+          reason: 'no_plant_detected',
+          message: `Non-crop image detected (dominant non-plant colors: ${(blueRatio * 100).toFixed(1)}%). The image does not contain agricultural crop foliage.`,
+          retry_message: 'Please upload a close-up photo focusing directly on a crop leaf rather than sky or background.',
+          vegetationRatio: ratio,
+          suggestions: [
+            'Take a close-up photo of a single crop leaf.',
+            'Avoid background objects, sky, or synthetic items.',
+            'Focus camera directly on the leaf surface.'
+          ]
+        };
+      }
+
+      // Allow minimum 8% foliage coverage for a valid leaf
+      if (ratio < 0.08) {
         return {
           isValid: false,
           reason: 'no_plant_detected',

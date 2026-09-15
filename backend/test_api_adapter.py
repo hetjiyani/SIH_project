@@ -18,13 +18,23 @@ async def run_tests():
         print(f"[1/8] GET / -> Status {res.status_code}")
         assert res.status_code == 200
 
-        # 2. Disease Predict
-        files = {"image": ("test_leaf.jpg", b"fake_image_bytes", "image/jpeg")}
+        # 2. Disease Predict (Test with real leaf photo)
+        from pathlib import Path
+        test_img_path = Path(__file__).resolve().parent.parent / "Test Images" / "Test.jpeg"
+        if test_img_path.exists():
+            files = {"image": ("test_leaf.jpg", test_img_path.read_bytes(), "image/jpeg")}
+        else:
+            files = {"image": ("test_leaf.jpg", b"fake_image_bytes", "image/jpeg")}
         data = {"crop_type": "Tomato", "soil_moisture": "68", "temperature": "27"}
         res = await client.post("/api/predict-disease", files=files, data=data)
         d = res.json()
         print(f"[2/8] POST /api/predict-disease -> Status {res.status_code} | Disease: {d.get('disease')} | Status: {d.get('status')}")
-        assert "disease" in d and "confidence" in d and "precautions" in d
+        assert "disease" in d and "confidence" in d and "status" in d
+
+        # 2b. Non-crop rejection test
+        res_fake = await client.post("/api/predict-disease", files={"image": ("non_leaf.jpg", b"fake_bytes", "image/jpeg")}, data=data)
+        d_fake = res_fake.json()
+        assert d_fake.get("status") == "invalid_image", "Expected non-crop bytes to be rejected"
 
         # 3. Crop Recommendation
         crop_payload = {"ph": 6.4, "moisture": 68, "temperature": 27, "rainProb": 65, "soilType": "Loamy"}

@@ -61,7 +61,7 @@ async def predict(
 
     # ── Run prediction ─────────────────────────────────────────────────────
     try:
-        result = predict_disease(image_bytes, filename=file.filename or "")
+        result = predict_disease(image_bytes)
     except Exception as e:
         logger.exception("Prediction error")
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")

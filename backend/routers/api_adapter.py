@@ -54,33 +54,32 @@ async def api_predict_disease(
     upload = image or file
     if not upload:
         image_bytes = b""
-        filename = "sample_leaf.jpg"
     else:
         image_bytes = await upload.read()
-        filename = upload.filename or "uploaded_leaf.jpg"
 
-    # Call underlying disease service
-    result = predict_disease(image_bytes=image_bytes, filename=filename)
+    # Call underlying disease service strictly on image bytes
+    result = predict_disease(image_bytes=image_bytes)
 
-    # Guardrail Check: Non-plant or ambiguous image rejected
+    # Guardrail Check: Non-plant or improper image rejected
     if result.get("status") == "invalid_image":
+        is_improper = (result.get("reason") in ("improper_image", "low_confidence"))
         return {
             "status": "invalid_image",
-            "title": "No Crop Leaf Detected" if result.get("reason") != "low_confidence" else "Low Diagnostic Confidence",
-            "reason": result.get("reason", "unknown"),
-            "detected_subject": result.get("detected_subject", ""),
-            "message": result.get("message", "The uploaded image does not appear to contain recognizable crop foliage."),
+            "title": "Image is Not Proper (Confidence < 50%)" if is_improper else "No Crop Leaf Detected",
+            "reason": result.get("reason", "improper_image"),
+            "detected_subject": "Improper / Low-Confidence Leaf Image" if is_improper else result.get("detected_subject", ""),
+            "message": result.get("message", "The uploaded image is not proper or lacks recognizable crop foliage."),
             "retry_message": result.get("retry_message", "Please retry by uploading or capturing a clear close-up photograph of an agricultural crop leaf in bright, natural light."),
             "suggestions": result.get("suggestions", [
                 "Take a close-up photo of a single crop leaf.",
                 "Ensure good natural daylight without glare or dark shadows.",
                 "Focus camera directly on the affected leaf surface.",
-                "Verify your crop is one of our supported species."
+                "Ensure confidence is at least 50% for a valid diagnosis."
             ]),
             "vegetation_ratio": result.get("vegetation_ratio", 0.0),
             "confidence": round(result.get("confidence", 0.0) * 100, 1),
-            "crop": "Unrecognized",
-            "disease": "Validation Guardrail Triggered",
+            "crop": result.get("crop", "Unrecognized"),
+            "disease": "Image Not Proper (Low Confidence < 50%)" if is_improper else "Non-Crop Object Detected",
         }
 
     is_healthy = result.get("is_healthy", False)
@@ -91,6 +90,8 @@ async def api_predict_disease(
     summary_text = result.get("summary") or ""
     top_3 = result.get("top_3", [])
     model_mode = result.get("model_mode", "mock")
+    is_low_conf = result.get("is_low_confidence", False)
+    conf_warning = result.get("confidence_warning", "")
 
     if is_healthy:
         return {
@@ -101,6 +102,8 @@ async def api_predict_disease(
             "confidence": confidence_pct,
             "severity": "None",
             "badgeColor": "#2E7D32",
+            "is_low_confidence": is_low_conf,
+            "confidence_warning": conf_warning,
             "summary": (
                 summary_text or
                 f"The examined {detected_crop} leaf exhibits robust cellular turgor, "
@@ -130,6 +133,8 @@ async def api_predict_disease(
         "confidence": confidence_pct,
         "severity": "High" if (soil_moisture > 75 or confidence_pct > 80) else "Moderate",
         "badgeColor": "#C62828",
+        "is_low_confidence": is_low_conf,
+        "confidence_warning": conf_warning,
         "summary": (
             summary_text or
             f"Pathogen detected affecting {detected_crop} foliage. "
